@@ -190,7 +190,6 @@ function calculate_order_again_price($custom_meta){
     );
 
     $stickersMaterialPrices = array(
-        'Vinyl' => 0.108,
         'Vinyl Stickers' => 0.108,
         'Matte' => 0.108,
         'Holographic' => 0.139,
@@ -241,7 +240,7 @@ function calculate_order_again_price($custom_meta){
     
     
         $logger = wc_get_logger();
-        $context = array( 'source' => 'rabi_logs_111' );
+        $context = array( 'source' => 'rabi_logs' );
         $logger->error( "----------------------------------------" , $context );
         $logger->error( print_r($product_name, true) , $context );
         $logger->error( print_r($orderItemTotal, true) , $context );
@@ -268,31 +267,22 @@ function calculate_order_again_price($custom_meta){
 add_action( 'woocommerce_cart_loaded_from_session', 'customized_wc_load_order_again_data' );
 function customized_wc_load_order_again_data() {
     global $woocommerce;
-
     if ( ! empty( $_GET['order_again'] ) && is_user_logged_in() && ( $order = wc_get_order( $_GET['order_again'] ) ) && $order->get_id() == $_GET['order_again'] ) {
         // Empty the current cart
         $woocommerce->cart->empty_cart();
-
         // Populate the cart with all products from the previous order
         foreach ( $order->get_items() as $item ) {
             if ( ( $product = $item->get_product() ) && $product->exists() ) {
-                
                 $productName = $product->get_name(); // Here is where you get the product name.
                 $itemTotal = $item->get_total(); // get the item total
                 $quantity = $item->get_quantity();
-
                 // Load all product attributes
                 $variation = array();
                 $custom_meta = array();
-				$wapf_meta = array();
                 foreach ( $item->get_meta_data() as $meta ) {
                     $key = $meta->key;
                     if ( taxonomy_is_product_attribute( $key ) ) {
                         $variation[$key] = $item->get_meta( $key, true );
-                    }
-                    // Add a check for WAPF meta fields here
-                    if (strpos($key, 'wapf') !== false) { // Replace 'wapf' with the actual prefix or identifier used by WAPF
-                        $wapf_meta[$key] = $item->get_meta( $key, true );
                     }
                     $custom_meta[$key] = $item->get_meta( $key, true );
                 }
@@ -300,50 +290,57 @@ function customized_wc_load_order_again_data() {
                 $custom_meta["order_item_name_"] = $productName;
                 $custom_meta["Material"] = $item->get_meta('Material');
                 $custom_meta["Custom Price"] = $item->get_meta('Custom Price');
-                $calculatedPrice = calculate_order_again_price($custom_meta);     
+                $calculatedPrice = calculate_order_again_price($custom_meta);
                 $custom_meta["_order_again_price"] = $calculatedPrice;
-				
-				// Merge wapf_meta and custom_meta
-        		$meta_data = array_merge($wapf_meta, $custom_meta);
-                $logger = wc_get_logger();
-                $context = array( 'source' => 'rabi_new_1' );
-                $logger->error( "-----------------After-------------------" , $context );
-                $logger->error( print_r($item, true) , $context );
-                $logger->error( "------------------After End--------------------" , $context );
-				//Add the product to the cart with the new price and custom meta data
-                $woocommerce->cart->add_to_cart( 
-					$product->get_id(), 
-					$quantity, 
-					$product instanceof WC_Product_Variation ? $product->get_parent_id() : 0, 
-					$variation, 
-					array_merge(
-						array('_order_again_price' => $calculatedPrice, 'custom_meta' => $custom_meta), 
-						$wapf_meta
-					)
-				);
+                // $logger = wc_get_logger();
+                // $context = array( 'source' => 'rabi_logs' );
+                // $logger->error( "----------------------------------------" , $context );
+                // $logger->error( print_r($custom_meta, true) , $context );
+                // $logger->error( "----------------------------------------" , $context );
+                // Add the product to the cart with the new price and custom meta data
+                $woocommerce->cart->add_to_cart( $product->get_id(), $quantity, $product instanceof WC_Product_Variation ? $product->get_parent_id() : 0, $variation, array('_order_again_price' => $calculatedPrice, 'custom_meta' => $custom_meta) );
             }
         }
     }
 }
 
-add_action('woocommerce_admin_order_item_values', 'populate_wapf_fields', 1, 3);
-
+add_action('woocommerce_admin_order_item_values', 'populate_wapf_fields', 10, 3);
 function populate_wapf_fields($product, $item, $item_id) {
     // Retrieve the saved meta data
     $custom_meta = wc_get_order_item_meta($item_id, 'custom_meta', true);
     $logger = wc_get_logger();
-                $context = array( 'source' => 'edit_order' );
-                $logger->error(print_r($custom_meta, true) , $context );
+    $context = array( 'source' => 'rabi_logs' );
+    $logger->error( print_r($custom_meta, true) , $context );
     // Check if the custom_meta was saved and if the WAPF fields should be populated
     if ($custom_meta && isset($custom_meta['wapf_order_again']) && $custom_meta['wapf_order_again'] == 1) {
         $logger = wc_get_logger();
-                $context = array( 'source' => 'edit_order' );
-                $logger->error( print_r($custom_meta['wapf_order_again']) , $context );
+        $context = array( 'source' => 'rabi_logs' );
+        $logger->error( "----------------------------------------" , $context );
+        $logger->error( print_r($custom_meta, true) , $context );
     }
 }
 
 
 
+add_action( 'woocommerce_after_cart_item_name', 'display_customized_item_data', 10, 2 );
+function display_customized_item_data( $cart_item, $cart_item_key ) {
+    $fields_to_display = array('cutline', 'width', 'height', 'material', 'quantity', 'custom price');
+    // Display only specified custom meta data
+    foreach ( $cart_item["custom_meta"] as $key => $value ) {
+        if ( in_array( strtolower($key), $fields_to_display ) && ! empty( $value ) ) {
+            if (strtolower($key) == 'quantity' && $value == $cart_item['quantity']) {
+                continue; // If quantity field matches the product quantity, skip it.
+            }
+        }
+    }
+}
+
+add_filter( 'woocommerce_add_cart_item_data', 'add_custom_data_to_cart_item', 10, 2 );
+function add_custom_data_to_cart_item( $cart_item_data, $product_id ) {
+    $unique_cart_item_key = md5( microtime().rand() );
+    $cart_item_data['unique_key'] = $unique_cart_item_key;
+    return $cart_item_data;
+}
 
 add_action( 'woocommerce_after_cart_item_name', 'display_custom_item_data', 10, 2 );
 function display_custom_item_data( $cart_item, $cart_item_key ) {
@@ -374,47 +371,50 @@ function display_custom_item_data( $cart_item, $cart_item_key ) {
 }
 
 
+// Use the 'woocommerce_before_calculate_totals' hook to adjust the price
+add_action('woocommerce_before_calculate_totals', 'calculate_custom_price_for_the_order_again', 10);
+function calculate_custom_price_for_the_order_again($cart_object) {
+    
+    // echo "<pre>";
+    // print_r($cart_object);
+    // echo "</pre>";   
+    if ( ! $cart_object instanceof WC_Cart ) {
+        return;
+    }
+    //  echo "<pre>";
+    // print_r($cart_object);
+    // echo "</pre>";   
+  
 
-//Use custom Image on cart
+    foreach ($cart_object->get_cart() as $cart_item_key => $value) {
+        if ( isset( $value['custom_meta']['_order_again_price'] ) ) {
+            $value['data']->set_price( floatval( $value['custom_meta']['_order_again_price'] ) );
+        }
+    }
+}
+
+
+// //Use custom Image on cart
+
 add_filter('woocommerce_cart_item_thumbnail', 'custom_cart_item_thumbnail', 10, 3);
 function custom_cart_item_thumbnail($thumbnail, $cart_item, $cart_item_key) {
     if (isset($cart_item['custom_meta']['Image'])) {
         $image_url = $cart_item['custom_meta']['Image'];
-        $file_type = wp_check_filetype( $image_url );
-
-        if (in_array( $file_type['ext'], array('jpg', 'jpeg', 'png') )) {
-            return '<img src="' . esc_url($image_url) . '" alt="">';
-        } else {
-            return $thumbnail;
-        }
+        return '<img src="' . esc_url($image_url) . '" alt="">';
     } else {
         return $thumbnail;
     }
 }
 
-
-// ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-// //Disable order again button
-// remove_action( 'woocommerce_order_details_after_order_table', 'woocommerce_order_again_button' );
-
-
-
-
-
-
-
-
-
 //Use custom image on checkout page as well
+add_filter('woocommerce_checkout_cart_item_quantity', 'custom_checkout_cart_item_thumbnail', 10, 3);
+function custom_checkout_cart_item_thumbnail($quantity_html, $cart_item, $cart_item_key) {
+    if (isset($cart_item['custom_meta']['Image'])) {
+        $image_url = $cart_item['custom_meta']['Image'];
+        $image_html = '<img src="' . esc_url($image_url) . '" alt="" class="checkout-product-thumbnail">';
+        return $image_html . $quantity_html;
+    } else {
+        return $quantity_html;
+    }
+}
 
-// add_filter('woocommerce_cart_item_name', 'custom_checkout_cart_item_thumbnail', 10, 3);
-
-// function custom_checkout_cart_item_thumbnail($quantity_html, $cart_item, $cart_item_key) {
-//     if (isset($cart_item['custom_meta']['Image'])) {
-//         $image_url = $cart_item['custom_meta']['Image'];
-//         $image_html = '<img src="' . esc_url($image_url) . '" alt="" class="checkout-product-thumbnail">';
-//         return $image_html . $quantity_html;
-//     } else {
-//         return $quantity_html;
-//     }
-// }
