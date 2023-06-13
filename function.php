@@ -290,13 +290,18 @@ function customized_wc_load_order_again_data() {
                 $custom_meta["order_item_name_"] = $productName;
                 $custom_meta["Material"] = $item->get_meta('Material');
                 $custom_meta["Custom Price"] = $item->get_meta('Custom Price');
+				if($item->get_meta('Image')){
+					$custom_meta["Image"] = $item->get_meta('Image');
+				} else {
+					$custom_meta["Image"] = "Request Image from Client";
+				}
                 $calculatedPrice = calculate_order_again_price($custom_meta);
                 $custom_meta["_order_again_price"] = $calculatedPrice;
-                // $logger = wc_get_logger();
-                // $context = array( 'source' => 'rabi_logs' );
-                // $logger->error( "----------------------------------------" , $context );
-                // $logger->error( print_r($custom_meta, true) , $context );
-                // $logger->error( "----------------------------------------" , $context );
+                $logger = wc_get_logger();
+                $context = array( 'source' => 'check_image' );
+                $logger->error( "----------------------------------------" , $context );
+                $logger->error( print_r($custom_meta, true) , $context );
+                $logger->error( "----------------------------------------" , $context );
                 // Add the product to the cart with the new price and custom meta data
                 $woocommerce->cart->add_to_cart( $product->get_id(), $quantity, $product instanceof WC_Product_Variation ? $product->get_parent_id() : 0, $variation, array('_order_again_price' => $calculatedPrice, 'custom_meta' => $custom_meta) );
             }
@@ -304,19 +309,40 @@ function customized_wc_load_order_again_data() {
     }
 }
 
-add_action('woocommerce_admin_order_item_values', 'populate_wapf_fields', 10, 3);
-function populate_wapf_fields($product, $item, $item_id) {
-    // Retrieve the saved meta data
-    $custom_meta = wc_get_order_item_meta($item_id, 'custom_meta', true);
-    $logger = wc_get_logger();
-    $context = array( 'source' => 'rabi_logs' );
-    $logger->error( print_r($custom_meta, true) , $context );
-    // Check if the custom_meta was saved and if the WAPF fields should be populated
-    if ($custom_meta && isset($custom_meta['wapf_order_again']) && $custom_meta['wapf_order_again'] == 1) {
-        $logger = wc_get_logger();
-        $context = array( 'source' => 'rabi_logs' );
-        $logger->error( "----------------------------------------" , $context );
-        $logger->error( print_r($custom_meta, true) , $context );
+
+
+add_action( 'woocommerce_after_order_itemmeta', 'display_custom_meta_admin_order', 10, 3 );
+function display_custom_meta_admin_order( $item_id, $item, $product ){
+
+    // Get custom meta from the order item
+    $custom_meta = wc_get_order_item_meta( $item_id, 'custom_meta', true );
+
+    if( $custom_meta ) {
+        echo '<div class = "wc-order-item-sku">';
+        foreach( $custom_meta as $meta_key => $meta_value ) {
+			if($meta_key == "Width" || $meta_key == "Height" || $meta_key == "Quantity" || $meta_key == "Material" || $meta_key == "Image" || $meta_key == "_order_again_price"){
+				if($meta_key == "_order_again_price"){
+					echo '<p><strong>'. "Order Again Price" .':</strong> '. $meta_value .'</p>';
+				} else if ($meta_key == "Image"){
+					if($meta_value){
+						echo '<p><strong>'. $meta_key .':</strong> <a target="_blank" href="'. $meta_value .'"> Click here to see </a></p>';
+					} else {
+						echo '<p><strong>'. $meta_key .':</strong> '. "Request Image from customer" .'</p>';
+					}
+				} else {
+					echo '<p><strong>'. $meta_key .':</strong> '. $meta_value .'</p>';
+				}
+			}
+        }
+        echo '</div>';
+    }
+}
+
+
+add_action('woocommerce_checkout_create_order_line_item', 'save_custom_meta_to_order_items', 10, 4);
+function save_custom_meta_to_order_items($item, $cart_item_key, $values, $order) {
+    if (isset($values['custom_meta'])) {
+        $item->add_meta_data('custom_meta', $values['custom_meta'], true);
     }
 }
 
